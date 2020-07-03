@@ -10,26 +10,25 @@ const Loader = require('./lib/inspect/checks/loader');
 const Reporter = require('./lib/inspect/report');
 const Connector = require('infra.connectors');
 
-async function verify(env_address, criteria_path, connector) {
-    let reporter  = new Reporter();
+async function verify(env_address, criteria_path, connector, format) {
+    let reporter  = new Reporter(format);
 
     let context = { bakerPath: env_address };
 
     let loader = new Loader();
     let groups = await loader.loadChecks(criteria_path);
 
-    console.log();
-    console.log(chalk.underline('Checks'));
+    if (format == 'console') console.log(chalk.underline('Checks'));
 
     for (let group of groups) {
-        console.log(chalk`\n\t{bold ${group.description}\n}`);
+        if (format == 'console') console.log(chalk`\n\t{bold ${group.description}\n}`);
 
         for (let check of group.checks) {
             let instance = new check.module(connector, reporter);
 
-            console.log(chalk`\t{white ${check.name} check}`);
+            if (format == 'console') console.log(chalk`\t{white ${check.name} check}`);
             let results = await instance.check(context, check.args);
-            if (check.args && check.args.comment) {
+            if (format == 'console' && check.args && check.args.comment) {
                 console.log(chalk`\t\t{italic.gray ${check.args.comment}}`);
             }
             instance.report(results);
@@ -38,8 +37,8 @@ async function verify(env_address, criteria_path, connector) {
     reporter.summary();
 }
 
-async function main(env_address, criteria_path, connector) {
-    await verify(env_address, criteria_path, connector);
+async function main(env_address, criteria_path, connector, format) {
+    await verify(env_address, criteria_path, connector, format);
 }
 
 async function selectConnectorFromInventory(connectorType, connectorInfo, argv) {
@@ -202,6 +201,13 @@ yargs.command('verify [env_address]', 'Verify an instance', (yargs) => {
         type: 'string',
         alias: 'i',
     });
+
+    yargs.positional('format', {
+        describe: 'how to display report {console | json}',
+        type: 'string',
+        default: 'console',
+        alias: 'f',
+    });
 }, async (argv) => {
     if (argv.inventory) {
         let inventory = yaml.safeLoad(await fs.readFile(argv.inventory, 'utf8'));
@@ -209,15 +215,17 @@ yargs.command('verify [env_address]', 'Verify an instance', (yargs) => {
             let connectorType = Object.keys(group)[0];
 
             for (let connectorInfo of group[connectorType]) {
-                console.log('\n===================================');
-                console.log(`Connector: ${connectorType}`);
-                console.log(`Info: ${JSON.stringify(connectorInfo)}`);
-                console.log('===================================');
+                if(argv.format === 'console') {
+                    console.log('\n===================================');
+                    console.log(`Connector: ${connectorType}`);
+                    console.log(`Info: ${JSON.stringify(connectorInfo)}`);
+                    console.log('===================================');
+                }
 
                 let [connector, env_address, criteria_path] = await selectConnectorFromInventory(connectorType, connectorInfo, argv);
 
                 if (connector && env_address && criteria_path) {
-                    await main(env_address, criteria_path, connector);
+                    await main(env_address, criteria_path, connector, argv.format);
                 }
             }
         }
@@ -236,7 +244,7 @@ yargs.command('verify [env_address]', 'Verify an instance', (yargs) => {
             }
         }
 
-        await main(env_address, criteria_path, connector, { ssh_key: argv.ssh_key, container: argv.container });
+        await main(env_address, criteria_path, connector, { ssh_key: argv.ssh_key, container: argv.container }, argv.format);
     }
 });
 
